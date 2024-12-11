@@ -1,0 +1,1862 @@
+{
+  "swagger" : "2.0",
+  "info" : {
+    "description" : "MetcashRetailService provides an interface for stores/venues to exchange data with Metcash. \nIt covers retail sales and store inventory updates (receipts and adjustments), for Food and Liquor.\n\nTimestamps are ISO-8601 with RFC 3339 conventions.\n\nThe service uses an OAuth2 bearer token for authentication.  The client will be provided with a clientId, clientSecret and scope, and the clientSecret must be renewed periodically.  See ClientSecretAPI for more information.\n\nV1.2 \n- changed 'LoyaltyCardNumber' to 'TenderCardNumber'\n- added 'RequesterSiteId' to the request header\n- added 'OnlineProgramName' to differentiate the source of online orders\n- updated the 'ProductProm' comments to differentiate 'reduced to clear' markdowns and IBA Loyalty proms\n- changed the max length in Id fields to 32 characters\n- reduced 'ShopperMobileNumber' to 10 characters (only the digits)\n\nV3    \n- added 'LoyaltyProgramName' field to 'ProductProm' and 'SaleProm'\n- changed the URLs to match the new Azure cloud conventions \n- changed version to \"3\" for sake of clarity (V1.2 has \"V2\" in the URL)\n- added 202 = Accepted response to 'salestransaction' and 'salesfile'\n\nV4 \n- added store inventory upload interfaces (invoicelist, invoice, invoices and adjustments)\n- added Invoice Digitisation upload interfaces (product-costing and orders)\n- added sales receipt upload interface (SalesReceipts)\n- added a 'Manual' option to  'SaleMethod' enumeration\n- added 'PostingDate' (optional) to 'SalesTransaction' \n- added '204' response when there are no records for '/salesextracts' request\n- added 'SaleQtyIsNet' (optional) to 'ReceiptProduct'\n- removed enumeration from TenderName in 'ReceiptTender'\n- increased maxLength on 'LoyaltyProgramName' field to 32\n",
+    "version" : "4",
+    "title" : "MetcashRetailServices"
+  },
+  "basePath" : "/apimgw/retail",
+  "schemes" : [ "https", "http" ],
+  "consumes" : [ "application/json" ],
+  "produces" : [ "application/json" ],
+  "paths" : {
+    "/salestransactions" : {
+      "post" : {
+        "tags" : [ "Sales" ],
+        "summary" : "S1a - Upload sales transactions in a message.",
+        "description" : "The preferred method for uploading sales transactions from the store/venue.\nThis method sends smaller sets of transactions during the day, instead of as one file at the end of the day.\nNote that sales for each POS terminal are validated against data sent in the salestotals API, \ngenerated after the sales period ends.\n",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "SalesTransactionsDocument",
+          "description" : "A message containing a standard header then a wrapper containing site data and sales transactions \nin JSON format.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/SalesTransactionsDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          },
+          "202" : {
+            "description" : "Accepted response."
+          }
+        }
+      }
+    },
+    "/salesfile" : {
+      "post" : {
+        "tags" : [ "Sales" ],
+        "summary" : "S1b - Upload sales transactions in a file.",
+        "description" : "This joins a sales file object to a document header to form a complete message.\nThe sales file object contains a zipped set of JSON entries as per the SalesTransactions object, \nincluding a site record and the array of sales transactions.\n",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "SalesFileDocument",
+          "description" : "A message containing a standard header then a wrapper containing a file formatted \nas per salesTransactions.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/SalesFileDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          },
+          "202" : {
+            "description" : "Accepted response."
+          }
+        }
+      }
+    },
+    "/salestotals" : {
+      "post" : {
+        "tags" : [ "Sales" ],
+        "summary" : "S2 - Upload End of Day sales totals for reconciliation.",
+        "description" : "Used to upload sales total for POS terminals so the transactions from the store/venue can be\nchecked for completeness. If a POS terminal was idle or offline, send a record with a zero total.\nIf Metcash detects an imbalance between the sales transactions and sales total for a POS terminal,\nthe terminal will be flagged for re-extraction.\n",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "SalesTotalsDocument",
+          "description" : "A message containing a standard header then a wrapper containing site data and \nthe total for sales performed by each POS terminal for a defined date.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/SalesTotalsDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          }
+        }
+      }
+    },
+    "/salesextracts" : {
+      "get" : {
+        "tags" : [ "Sales" ],
+        "summary" : "S3 - Extract the list of dates for which sales should be (re-)sent.",
+        "description" : "Used to retrieve a list of POS terminals and trading dates that are to be (re)sent,\ntypically due to being missing or unbalanced.\nIf sales are sent via the salesfile API, it should be called before the file(s) are generated.\nIf the reason indicated is noHeatbeat, it may be sufficient to just (re)send the sales total.\nOtherwise (re)send the sales transactions and after that the sales totals to re-trigger the\nbalance check process.\n",
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "SiteId",
+          "in" : "query",
+          "description" : "SiteId is a number assigned by Metcash that identifies the primary location for the business.\n",
+          "required" : true,
+          "type" : "integer",
+          "format" : "int32"
+        }, {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response.",
+            "schema" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/definitions/SalesExtract"
+              }
+            }
+          },
+          "204" : {
+            "description" : "No content."
+          }
+        }
+      }
+    },
+    "/salesreceipts" : {
+      "post" : {
+        "tags" : [ "Sales" ],
+        "summary" : "S4 - Upload sales receipts in a message.",
+        "description" : "This is a 'lite' version of sales transaction designed to carry a basic POS receipt.\nIt is not balanced against daily totals before it is passed to external systems, \nit is 'information only' purposes.\n",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "SalesReceiptsDocument",
+          "description" : "A message containing a standard header then a wrapper containing site data and sales receipts \nin JSON format.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/SalesReceiptsDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          }
+        }
+      }
+    },
+    "/invoicelist" : {
+      "get" : {
+        "tags" : [ "Inventory" ],
+        "summary" : "I1 - List invoices.",
+        "description" : "Returns the list of invoices for a site using optional filters",
+        "operationId" : "get-api-retail-inventory-version-invoicelist",
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "name" : "SiteId",
+          "in" : "query",
+          "description" : "SiteId is a number assigned by Metcash that identifies the primary location for the business.\n",
+          "required" : true,
+          "type" : "integer",
+          "format" : "int32"
+        }, {
+          "name" : "Status",
+          "in" : "query",
+          "description" : "Specify the invoice status to return, or all. If omitted, assume 'uncollected'.\nAllowed values are:\n  all – All invoices\n  collected – Site has collected  \n  uncollected – Site has not collected  [default]\n",
+          "required" : false,
+          "type" : "string"
+        }, {
+          "name" : "FromTimestamp",
+          "in" : "query",
+          "description" : "Specify the date/time after which you will see invoices based on their processed timestamp.  \nCan be omitted if Status is 'uncollected'.\n",
+          "required" : false,
+          "type" : "string"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response.",
+            "schema" : {
+              "type" : "array",
+              "items" : {
+                "$ref" : "#/definitions/OutboundInvoiceHeader"
+              }
+            }
+          },
+          "204" : {
+            "description" : "No content."
+          }
+        }
+      }
+    },
+    "/invoice" : {
+      "get" : {
+        "tags" : [ "Inventory" ],
+        "summary" : "I2 - Get an invoice.",
+        "description" : "Returns a specified invoice",
+        "operationId" : "get-api-retail-inventory-version-invoice",
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "name" : "SiteId",
+          "in" : "query",
+          "description" : "SiteId is a number assigned by Metcash that identifies the primary location for the business.\n",
+          "required" : true,
+          "type" : "integer",
+          "format" : "int32"
+        }, {
+          "name" : "DocumentId",
+          "in" : "query",
+          "description" : "The unique ID used internally by Metcash to store/track the invoice",
+          "required" : true,
+          "type" : "string",
+          "maxLength" : 32
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response.",
+            "schema" : {
+              "$ref" : "#/definitions/OutboundInvoice"
+            }
+          }
+        }
+      }
+    },
+    "/invoices" : {
+      "post" : {
+        "tags" : [ "Inventory" ],
+        "summary" : "I3 - Upload invoices.",
+        "description" : "Upload one or more invoices",
+        "operationId" : "post-api-retail-inventory-version-invoices",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "InvoicesDocument",
+          "description" : "A message containing a standard header then a wrapper containing site data \nand invoices in JSON format.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/InboundInvoicesDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          }
+        }
+      }
+    },
+    "/adjustments" : {
+      "post" : {
+        "tags" : [ "Inventory" ],
+        "summary" : "I4 - Upload adjustments.",
+        "description" : "Upload one or more adjustments",
+        "operationId" : "post-api-retail-inventory-version-adjustments",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "AdjustmentsDocument",
+          "description" : "A message containing a standard header then a wrapper containing site data \nand adjustments in JSON format.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/AdjustmentsDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          }
+        }
+      }
+    },
+    "/costing" : {
+      "post" : {
+        "tags" : [ "Products" ],
+        "summary" : "P1 - Upload product costing.",
+        "description" : "Upload one or more product costing records",
+        "operationId" : "post-api-retail-products-version-costing",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "ProductCostingDocument",
+          "description" : "A message containing a standard header then a wrapper containing site data and \nproduct costing in JSON format.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/ProductCostingDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          }
+        }
+      }
+    },
+    "/orders" : {
+      "post" : {
+        "tags" : [ "Orders" ],
+        "summary" : "O1 - Upload orders.",
+        "description" : "Upload one or more orders records",
+        "operationId" : "post-api-retail-orders-version-orders",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "RequesterSiteId",
+          "in" : "header",
+          "description" : "The RequesterSiteId of the client sending the information.  \nThis may be a head-office ID if sending on behalf of many child sites.\n",
+          "required" : true,
+          "type" : "string"
+        }, {
+          "in" : "body",
+          "name" : "OrdersDocument",
+          "description" : "A message containing a standard header then a wrapper containing site data and \norders in JSON format.\n",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/OrdersDocument"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Successful response."
+          }
+        }
+      }
+    }
+  },
+  "definitions" : {
+    "SalesTransactionsDocument" : {
+      "type" : "object",
+      "description" : "This joins SalesTransactions to a document header to form a complete message.\n",
+      "required" : [ "DocumentHeader", "SalesTransactions" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "SalesTransactions" : {
+          "$ref" : "#/definitions/SalesTransactions"
+        }
+      }
+    },
+    "SalesTransactions" : {
+      "type" : "object",
+      "description" : "SalesTransactions identifies the site and provides a list of transactions for the site to the host.\n",
+      "required" : [ "SalesTransactionDetails", "Site" ],
+      "properties" : {
+        "Site" : {
+          "$ref" : "#/definitions/Site"
+        },
+        "SalesTransactionDetails" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/SalesTransactionDetail"
+          }
+        }
+      }
+    },
+    "SalesTransactionDetail" : {
+      "type" : "object",
+      "description" : "This defines one complete sale, including all the products, discounts and tendering to make it balance.\nIt also identifies the POS and user that performed it.\n",
+      "required" : [ "POSId", "POSSaleId", "POSUserId", "SaleGSTValue", "SaleMethod", "SaleTimeStamp", "SaleValueInc" ],
+      "properties" : {
+        "SaleTimeStamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "The date and time the transaction was completed.\nUse the 'local time' (unqualified) convention (no time zone) so the transaction matches\nthe date in the 'SalesTotal' message. Note, this is the time of the activity.  If you are referencing a previous transaction, this is still the time of the current activity.  You can optionally set the “PostingDate” to indicate the original date.\n"
+        },
+        "LocationId" : {
+          "type" : "string",
+          "description" : "If the site dissects sales based on locations (e.g. bottleshop separate to main location) \nthen provide the ID for the location.\n",
+          "maxLength" : 32
+        },
+        "POSId" : {
+          "type" : "string",
+          "description" : "The POS systems identifier of the POS terminal.\nIt must be unique within the site it is not sufficient that it is unique with a location.\n",
+          "maxLength" : 32
+        },
+        "POSUserId" : {
+          "type" : "string",
+          "description" : "The identifier of the user/cashier at the POS terminal for this transaction.",
+          "maxLength" : 32
+        },
+        "POSSaleId" : {
+          "type" : "string",
+          "description" : "The unique identifier for the sale transaction, for the POSId on the day of the sale.\nIt need not be unique independent of the POS and date.\n",
+          "maxLength" : 32
+        },
+        "SaleMethod" : {
+          "type" : "string",
+          "description" : "An enumerated value that identifies the type of sale.\n* 'Staffed' - completed instore at a traditional staffed POS terminal\n* 'SelfServe' - completed instore at an instore self-checkout terminal\n* 'Delivered' - created online and delivered to the shopper\n* 'Collected' - created online and collected by the shopper instore\n* 'Mobile' - transaction is finalised on a mobile POS terminal\n* 'Temporary' - transaction is finalised on a POS terminal that may not be used tomorrow\n* 'Manual' - a non-integrated, external transaction\n",
+          "enum" : [ "Staffed", "SelfServe", "Delivered", "Collected", "Mobile", "Temporary", "Manual" ]
+        },
+        "OnlineProgramName" : {
+          "type" : "string",
+          "description" : "Where the transaction was initated online (Delivered,Collected) provide \nthe name of the online source.\n",
+          "maxLength" : 20
+        },
+        "SaleValueInc" : {
+          "type" : "number",
+          "description" : "The sale value including GST - what the shopper has paid.\nIt will match the sum of the tenders.\nWill also match the sum of the products less the sum of any sale-level discounts.\n"
+        },
+        "SaleGSTValue" : {
+          "type" : "number",
+          "description" : "The total GST value shown on the tax invoice."
+        },
+        "PostingDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "Optional date that may assist in managing rebates where linked sales are cancelled or manual sales are entered after days have been balanced.\n"
+        },
+        "Products" : {
+          "type" : "array",
+          "description" : "The list of products that make up this transaction.",
+          "items" : {
+            "$ref" : "#/definitions/Product"
+          }
+        },
+        "SaleProms" : {
+          "type" : "array",
+          "description" : "The list of promotion discounts (potentially different, overlapping promotion codes) \nwhich when summed, discount the sum of the product sales to arrive at SaleValueInc.\n",
+          "items" : {
+            "$ref" : "#/definitions/SaleProm"
+          }
+        },
+        "Tenders" : {
+          "type" : "array",
+          "description" : "This is the list of tenders that record payments and/or loyalty point issuance and/or redemptions.\n",
+          "items" : {
+            "$ref" : "#/definitions/Tender"
+          }
+        }
+      }
+    },
+    "Product" : {
+      "type" : "object",
+      "description" : "Product represents an individual line in a sale transaction.",
+      "required" : [ "BaseSellInc", "CostGSTRate", "CostValueEx", "DeptId", "GTINPLU", "ProductMSC", "ProductName", "SaleLineNumber", "SaleQty", "SaleUnit", "SellGSTRate", "SellValueEx", "SellValueInc" ],
+      "properties" : {
+        "SaleLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number in this sale for this line."
+        },
+        "GTINPLU" : {
+          "type" : "string",
+          "description" : "Where a product has a GTIN it must be provided, including its GS1 checkdigit.\nIn the case the product does not have a GTIN, where possible provide a PLU code\nissued by Metcash or another recognised body.\nLast resort is to provide an in-house assigned PLU code, or set as '0' (open department sales).\nThe field is 14 characters and should be padded with leading zeros.\n",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "ProductName" : {
+          "type" : "string",
+          "description" : "The name of the product as it appears on the tax-invoice.",
+          "maxLength" : 50
+        },
+        "ProductMSC" : {
+          "type" : "string",
+          "description" : "The Metcash Standard Categorisation code, formatted as CCCccss\nwhere CCC is Category, cc is Commodity and ss is Sub Section.\nThis is a mandatory field.  Where a product is sourced direct, the system must either \nuse mapping to assign an MSC or provide a value captured by user-entry.\n",
+          "minLength" : 7,
+          "maxLength" : 7
+        },
+        "DeptId" : {
+          "type" : "string",
+          "description" : "The in-house department code use by the business to analyse performance below the location level.\n",
+          "maxLength" : 32
+        },
+        "MetcashProductCode" : {
+          "type" : "string",
+          "description" : "Where the product has been sourced from Metcash, provide the hosted Metcash product code, \npadded with leading zeros (i.e. as hosted). Otherwise, omit this field.\n",
+          "minLength" : 8,
+          "maxLength" : 8
+        },
+        "BaseSellInc" : {
+          "type" : "number",
+          "description" : "The normal in-house unit sell price including GST, before any promotion discounts are applied.\n"
+        },
+        "SaleQty" : {
+          "type" : "number",
+          "description" : "The number of products transacted in this sale detail record.\nIf the product is sold by weight or volume, then this is a decimal amount \nreflecting the impact on stock.\n"
+        },
+        "SaleUnit" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the SaleQty.",
+          "enum" : [ "ea", "kg", "m", "l", "pcs" ]
+        },
+        "SellValueInc" : {
+          "type" : "number",
+          "description" : "The effective price that the customer pays for the product(s) in this record,\ninclusive of product-level discounts.\n"
+        },
+        "SellValueEx" : {
+          "type" : "number",
+          "description" : "The tax-exclusve value of this item after GST for the transaction is attributed."
+        },
+        "SellGSTRate" : {
+          "type" : "number",
+          "description" : "The GST rate for this product at retail."
+        },
+        "CostValueEx" : {
+          "type" : "number",
+          "description" : "The extended cost for this product, exclusive of GST, for the SaleQty and SaleUnit advised above.\n"
+        },
+        "CostGSTRate" : {
+          "type" : "number",
+          "description" : "The GST rate for the inbound supply.\nMay be different to the SaleGSTRate for in-house manufactured lines and pharmaceuticals.\n"
+        },
+        "LoyaltyPoints" : {
+          "type" : "number",
+          "description" : "The number of loyalty points the shopper earns for this sale detail record."
+        },
+        "ProductProms" : {
+          "type" : "array",
+          "description" : "The list of promotion discounts and POS markdowns (potentially different, \noverlapping promotion codes) which when summed, discount BaseSellInc to arrive at SellValueInc.\nNote, if there are no promotions or markdowns, omit this array.\n",
+          "items" : {
+            "$ref" : "#/definitions/ProductProm"
+          }
+        }
+      }
+    },
+    "ProductProm" : {
+      "type" : "object",
+      "description" : "ProductProm represents the discount that it applied to a product due to this particular promotion.\nIt is also used to capture other markdowns, like 'reduce to clear'.\n",
+      "required" : [ "ProductPromCode", "ProductPromValueInc" ],
+      "properties" : {
+        "ProductPromCode" : {
+          "type" : "string",
+          "description" : "When Metcash has hosted the reduction as a promotion, provide that code.\nWhere Metcash has hosted the reduction via 'Retail Offers', set as 'MTSRO'.\nWhere Metcash has hosted the reduction via 'IBA Proms', set as 'IBAPROM'.\nFor individual product markdowns (clearance / POS override), set as 'MARKDOWN'\nOtherwise set as 'INSTORE'.\n",
+          "maxLength" : 20
+        },
+        "ProductPromId" : {
+          "type" : "string",
+          "description" : "When Metcash has hosted the promotion, provide the hosted PromotionId value.\nWhere Metcash has hosted the reduction via 'Retail Offers', specify the hosted offer ID.\nWhere Metcash has hosted the reduction via 'IBA Proms', specify the 'promotioncomment',\nof importance, 'LOYALTY' for member-only specials.\nOtherwise, provide the promotion ID within the POS system.\n",
+          "maxLength" : 32
+        },
+        "ProductPromValueInc" : {
+          "type" : "number",
+          "description" : "The price reduction on the product attributed to this promotion for this ProductPromCode.\n"
+        },
+        "LoyaltyProgramName" : {
+          "type" : "string",
+          "description" : "The name of the loyalty program associated with the loyalty details that follow in this record.\n",
+          "maxLength" : 32
+        }
+      }
+    },
+    "SaleProm" : {
+      "type" : "object",
+      "description" : "SaleProm represents a transaction level discount where the reduction is not applied to \nindividual products.\n",
+      "required" : [ "SaleLineNumber", "SalePromCode", "SalePromValueInc" ],
+      "properties" : {
+        "SaleLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number in this sale for this line."
+        },
+        "SalePromCode" : {
+          "type" : "string",
+          "description" : "Where Metcash has hosted the reduction via 'Retail Offers', set as 'MTSRO'.\nOtherwise set as 'INSTORE'.\n",
+          "maxLength" : 20
+        },
+        "SalePromId" : {
+          "type" : "string",
+          "description" : "When Metcash has hosted the promotion, provide the hosted PromotionId value.\nWhere Metcash has hosted the reduction via 'Retail Offers', specify the hosted offer ID.\nOtherwise, provide the promotion ID within the POS system.\n",
+          "maxLength" : 32
+        },
+        "SalePromValueInc" : {
+          "type" : "number",
+          "description" : "The reduction on the sale attributed to this promotion, \nnoting that in there may be multiple promotions on the sale.\n"
+        },
+        "LoyaltyProgramName" : {
+          "type" : "string",
+          "description" : "The name of the loyalty program associated with the loyalty details that follow in this record.\n",
+          "maxLength" : 32
+        }
+      }
+    },
+    "Tender" : {
+      "type" : "object",
+      "description" : "The definition captures the finalisation details for a sale.\nIt is typically payment details but can include other information indentifing the shopper.\n",
+      "required" : [ "SaleLineNumber", "TenderName" ],
+      "properties" : {
+        "SaleLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number in this sale for this line."
+        },
+        "TenderName" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the consideration received or paid-out in this transaction.\nNote that Change and Cashout would be shown as negative, as would a refund.\n",
+          "enum" : [ "Cash", "Change", "EFTPOS", "Cashout", "Loyalty", "Account", "Cheque", "Other" ]
+        },
+        "TenderValue" : {
+          "type" : "number",
+          "description" : "The amount of tender (dollars) received or paid-out for the TenderName above."
+        },
+        "LoyaltyProgramName" : {
+          "type" : "string",
+          "description" : "The name of the loyalty program associated with the loyalty details that follow in this record.\n",
+          "maxLength" : 32
+        },
+        "TenderCardNumber" : {
+          "type" : "string",
+          "description" : "This field contains the number that relates to the named tender.  \nIf it is Loyalty, it will be the loyalty card number. \nIf it is EFTPOS, it will be the obfuscated card number. \nIf it is Account. it will be the debtor's account number.\n",
+          "maxLength" : 20
+        },
+        "ShopperMobileNumber" : {
+          "type" : "string",
+          "description" : "If known, the customers mobile phone number. \nOften captured when the customer first collects a loyalty card.\nFormat with no brackets, spaces or hyphens.\n",
+          "maxLength" : 10
+        },
+        "LoyaltyEarned" : {
+          "type" : "number",
+          "description" : "Total number of points (in terms of the program named above) issued to the customer as a result\nof this transaction. This need not be in dollar terms.\n"
+        },
+        "LoyaltyRedeemed" : {
+          "type" : "number",
+          "description" : "Total number of points redeemed to reduce the total value of the transaction."
+        }
+      }
+    },
+    "SalesFileDocument" : {
+      "type" : "object",
+      "description" : "This joins a sales file object to a document header to form a complete message.\nThe sales file object contains transactions as per the SalesTransactions object, \nincluding a site record and the array of sales transactions.\n",
+      "required" : [ "DocumentHeader", "SalesFile" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "SalesFile" : {
+          "$ref" : "#/definitions/File"
+        }
+      }
+    },
+    "SalesTotalsDocument" : {
+      "type" : "object",
+      "description" : "This joins SalesTotals to a document header to form a complete message.",
+      "required" : [ "DocumentHeader", "SalesTotals" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "SalesTotals" : {
+          "$ref" : "#/definitions/SalesTotals"
+        }
+      }
+    },
+    "SalesTotals" : {
+      "type" : "object",
+      "description" : "SalesTotals primarily advises the end of day sales total for each POS in the site \nfor use in reconciliation.  It also identifies the site and carries advice of \nthe inhouse departments used in sales transaction detail.\n",
+      "required" : [ "Depts", "SalesTotals", "Site" ],
+      "properties" : {
+        "Site" : {
+          "$ref" : "#/definitions/Site"
+        },
+        "Depts" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/Dept"
+          }
+        },
+        "SalesTotals" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/SalesTotal"
+          }
+        }
+      }
+    },
+    "Dept" : {
+      "type" : "object",
+      "description" : "The definition of an inhouse departments at the site. Used to better understand product level sales.\n",
+      "required" : [ "DeptId", "DeptName" ],
+      "properties" : {
+        "DeptId" : {
+          "type" : "string",
+          "description" : "The inhouse department code associated with a product at the site.",
+          "maxLength" : 32
+        },
+        "DeptName" : {
+          "type" : "string",
+          "description" : "The name of the inhouse department as it appears in reporting.",
+          "maxLength" : 50
+        }
+      }
+    },
+    "SalesTotal" : {
+      "type" : "object",
+      "description" : "The SalesTotal record indicates the total value of sales for a given POS terminal on a given calendar day.\nIf no sales were made on the terminal, send the record with a zero value.\n",
+      "required" : [ "POSId", "SalesDate", "SalesValueInc" ],
+      "properties" : {
+        "LocationId" : {
+          "type" : "string",
+          "description" : "Optional field that identifies a distinct location in a site.",
+          "maxLength" : 32
+        },
+        "POSId" : {
+          "type" : "string",
+          "description" : "This is the POS Identifier.",
+          "maxLength" : 32
+        },
+        "SalesDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date of the sales."
+        },
+        "SalesValueInc" : {
+          "type" : "number",
+          "description" : "The total value of all sales for the day, including GST."
+        }
+      }
+    },
+    "SalesExtract" : {
+      "type" : "object",
+      "description" : "SalesExtract is a record indicating which sets of sales are to be (re)sent to the host, \nindicating the reason.\n",
+      "required" : [ "Reason", "SalesDate" ],
+      "properties" : {
+        "LocationId" : {
+          "type" : "string",
+          "description" : "Optional field that identifies a distinct location in a site.",
+          "maxLength" : 32
+        },
+        "POSId" : {
+          "type" : "string",
+          "description" : "This is the POS Identifier.  If it is not present, send transactions for all terminals.",
+          "maxLength" : 32
+        },
+        "SalesDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date of the sales to be (re)sent."
+        },
+        "Reason" : {
+          "type" : "string",
+          "description" : "The reason for requesting this dataset.\n * 'NoHeartbeat' - Sales transactions have been received for the POS but no sales total\n * 'NotBalanced' - Sum of sales transactions does not match sales total\n * 'NotAverage' - Total of sales transactions is not close to the expected daily total\n",
+          "enum" : [ "NoHeartbeat", "NotBalanced", "NotAverage" ]
+        }
+      }
+    },
+    "SalesReceiptsDocument" : {
+      "type" : "object",
+      "description" : "This joins SalesReceipts to a document header to form a complete message.\n",
+      "required" : [ "DocumentHeader", "SalesReceipts" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "SalesReceipts" : {
+          "$ref" : "#/definitions/SalesReceipts"
+        }
+      }
+    },
+    "SalesReceipts" : {
+      "type" : "object",
+      "description" : "SalesReceipts identifies the site and provides a list of receipts for the site to the host.\n",
+      "required" : [ "SalesReceiptDetails", "Site" ],
+      "properties" : {
+        "Site" : {
+          "$ref" : "#/definitions/Site"
+        },
+        "SalesReceiptDetails" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/SalesReceiptDetail"
+          }
+        }
+      }
+    },
+    "SalesReceiptDetail" : {
+      "type" : "object",
+      "description" : "This defines one complete POS receipt, including the products, discounts and tendering.\nIt also identifies the POS and user that performed it.\n",
+      "required" : [ "POSId", "POSSaleId", "POSUserId", "SaleGSTValue", "SaleMethod", "SaleTimeStamp", "SaleValueInc" ],
+      "properties" : {
+        "SaleTimeStamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "The date and time the transaction was completed.\nUse the 'local time' (unqualified) convention (no time zone) so the transaction matches\nthe date in the 'SalesTotal' message.\n"
+        },
+        "LocationId" : {
+          "type" : "string",
+          "description" : "If the site dissects sales based on locations (e.g. bottleshop separate to main location) \nthen provide the ID for the location.\n",
+          "maxLength" : 32
+        },
+        "POSId" : {
+          "type" : "string",
+          "description" : "The POS systems identifier of the POS terminal.\nIt must be unique within the site it is not sufficient that it is unique with a location.\n",
+          "maxLength" : 32
+        },
+        "POSUserId" : {
+          "type" : "string",
+          "description" : "The identifier of the user/cashier at the POS terminal for this transaction.",
+          "maxLength" : 32
+        },
+        "POSSaleId" : {
+          "type" : "string",
+          "description" : "The unique identifier for the sale transaction, for the POSId on the day of the sale.\nIt need not be unique independent of the POS and date.\n",
+          "maxLength" : 32
+        },
+        "SaleMethod" : {
+          "type" : "string",
+          "description" : "An enumerated value that identifies the type of sale.\n* 'Staffed' - completed instore at a traditional staffed POS terminal\n* 'SelfServe' - completed instore at an instore self-checkout terminal\n* 'Delivered' - created online and delivered to the shopper\n* 'Collected' - created online and collected by the shopper instore\n* 'Mobile' - transaction is finalised on a mobile POS terminal\n* 'Temporary' - transaction is finalised on a POS terminal that may not be used tomorrow\n",
+          "enum" : [ "Staffed", "SelfServe", "Delivered", "Collected", "Mobile", "Temporary" ]
+        },
+        "OnlineProgramName" : {
+          "type" : "string",
+          "description" : "Where the transaction was initated online (Delivered,Collected) provide \nthe name of the online source.\n",
+          "maxLength" : 20
+        },
+        "SaleValueInc" : {
+          "type" : "number",
+          "description" : "The sale value including GST - what the shopper has paid.\nIt will match the sum of the tenders.\nWill also match the sum of the products less the sum of any sale-level discounts.\n"
+        },
+        "SaleGSTValue" : {
+          "type" : "number",
+          "description" : "The total GST value shown on the tax invoice."
+        },
+        "ReceiptProducts" : {
+          "type" : "array",
+          "description" : "The list of products that make up this transaction.",
+          "items" : {
+            "$ref" : "#/definitions/ReceiptProduct"
+          }
+        },
+        "ReceiptSaleProms" : {
+          "type" : "array",
+          "description" : "The list of promotion discounts (potentially different, overlapping promotion codes) \nwhich when summed, discount the sum of the product sales to arrive at SaleValueInc.\n",
+          "items" : {
+            "$ref" : "#/definitions/ReceiptSaleProm"
+          }
+        },
+        "ReceiptTenders" : {
+          "type" : "array",
+          "description" : "This is the list of tenders that record payments and/or loyalty point issuance and/or redemptions.\n",
+          "items" : {
+            "$ref" : "#/definitions/ReceiptTender"
+          }
+        }
+      }
+    },
+    "ReceiptProduct" : {
+      "type" : "object",
+      "description" : "Product represents an individual line in a sale transaction.",
+      "required" : [ "GTINPLU", "ProductName", "SaleLineNumber", "SaleQty", "SaleUnit", "SellGSTRate", "SellValueInc" ],
+      "properties" : {
+        "SaleLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number in this sale for this line."
+        },
+        "GTINPLU" : {
+          "type" : "string",
+          "description" : "Where a product has a GTIN it must be provided, including its GS1 checkdigit.\nIn the case the product does not have a GTIN, where possible provide a PLU code\nissued by Metcash or another recognised body.\nLast resort is to provide an in-house assigned PLU code, or set as '0' (open department sales).\nThe field is 14 characters and should be padded with leading zeros.\n",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "ProductName" : {
+          "type" : "string",
+          "description" : "The name of the product as it appears on the tax-invoice.",
+          "maxLength" : 50
+        },
+        "BaseSellInc" : {
+          "type" : "number",
+          "description" : "The normal in-house unit sell price including GST, before any promotion discounts are applied.\n"
+        },
+        "SaleQty" : {
+          "type" : "number",
+          "description" : "The number of products transacted in this sale detail record.\nIf the product is sold by weight or volume, then this is a decimal amount \nreflecting the impact on stock.\n"
+        },
+        "SaleQtyIsNet" : {
+          "type" : "boolean",
+          "description" : "Set this 'true' when you would show 'NET' on the sales receipt.  For example, when selling apples, we show 'NET' because there is a tare value for the bag.\n"
+        },
+        "SaleUnit" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the SaleQty.",
+          "enum" : [ "ea", "kg", "m", "l", "pcs" ]
+        },
+        "SellValueInc" : {
+          "type" : "number",
+          "description" : "The effective price that the customer pays for the product(s) in this record,\ninclusive of product-level discounts.\n"
+        },
+        "SellValueEx" : {
+          "type" : "number",
+          "description" : "The tax-exclusve value of this item after GST for the transaction is attributed."
+        },
+        "SellGSTRate" : {
+          "type" : "number",
+          "description" : "The GST rate for this product at retail."
+        },
+        "ReceiptProductProms" : {
+          "type" : "array",
+          "description" : "The list of promotion discounts and POS markdowns (potentially different, \noverlapping promotion codes) which when summed, discount BaseSellInc to arrive at SellValueInc.\nNote, if there are no promotions or markdowns, omit this array.\n",
+          "items" : {
+            "$ref" : "#/definitions/ReceiptProductProm"
+          }
+        }
+      }
+    },
+    "ReceiptProductProm" : {
+      "type" : "object",
+      "description" : "ReceiptProductProm represents the discount that it applied to a product due to this particular promotion.\nIt is also used to capture other markdowns, like 'reduce to clear'.\n",
+      "required" : [ "ProductPromValueInc" ],
+      "properties" : {
+        "ProductPromCode" : {
+          "type" : "string",
+          "description" : "When Metcash has hosted the reduction as a promotion, provide that code.\nWhere Metcash has hosted the reduction via 'Retail Offers', set as 'MTSRO'.\nWhere Metcash has hosted the reduction via 'IBA Proms', set as 'IBAPROM'.\nFor individual product markdowns (clearance / POS override), set as 'MARKDOWN'\nOtherwise set as 'INSTORE'.\n",
+          "maxLength" : 20
+        },
+        "ProductPromValueInc" : {
+          "type" : "number",
+          "description" : "The price reduction on the product attributed to this promotion for this ProductPromCode.\n"
+        },
+        "LoyaltyProgramName" : {
+          "type" : "string",
+          "description" : "The name of the loyalty program associated with the loyalty details that follow in this record.\n",
+          "maxLength" : 32
+        }
+      }
+    },
+    "ReceiptSaleProm" : {
+      "type" : "object",
+      "description" : "ReceiptSaleProm represents a transaction level discount where the reduction is not applied to \nindividual products.\n",
+      "required" : [ "SaleLineNumber", "SalePromCode", "SalePromValueInc" ],
+      "properties" : {
+        "SaleLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number in this sale for this line."
+        },
+        "SalePromCode" : {
+          "type" : "string",
+          "description" : "Where Metcash has hosted the reduction via 'Retail Offers', set as 'MTSRO'.\nOtherwise set as 'INSTORE'.\n",
+          "maxLength" : 20
+        },
+        "SalePromValueInc" : {
+          "type" : "number",
+          "description" : "The reduction on the sale attributed to this promotion, \nnoting that in there may be multiple promotions on the sale.\n"
+        },
+        "LoyaltyProgramName" : {
+          "type" : "string",
+          "description" : "The name of the loyalty program associated with the loyalty details that follow in this record.\n",
+          "maxLength" : 32
+        }
+      }
+    },
+    "ReceiptTender" : {
+      "type" : "object",
+      "description" : "The definition captures the finalisation details for a sale.\nIt is typically payment details but can include other information indentifing the shopper.\n",
+      "required" : [ "SaleLineNumber", "TenderName" ],
+      "properties" : {
+        "SaleLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number in this sale for this line."
+        },
+        "TenderName" : {
+          "type" : "string",
+          "description" : "The message that describes the consideration received or paid-out in this transaction, as per the shopper's receipt.\n"
+        },
+        "TenderValue" : {
+          "type" : "number",
+          "description" : "The amount of tender (dollars) received or paid-out for the TenderName above."
+        },
+        "LoyaltyProgramName" : {
+          "type" : "string",
+          "description" : "The name of the loyalty program associated with the loyalty details that follow in this record.\n",
+          "maxLength" : 32
+        },
+        "TenderCardNumber" : {
+          "type" : "string",
+          "description" : "This field contains the number that relates to the named tender.  \nIf it is Loyalty, it will be the loyalty card number. \nIf it is EFTPOS, it will be the obfuscated card number. \nIf it is Account. it will be the debtor's account number.\n",
+          "maxLength" : 20
+        },
+        "ShopperMobileNumber" : {
+          "type" : "string",
+          "description" : "If known, the customers mobile phone number. \nOften captured when the customer first collects a loyalty card.\nFormat with no brackets, spaces or hyphens.\n",
+          "maxLength" : 10
+        },
+        "LoyaltyEarned" : {
+          "type" : "number",
+          "description" : "Total number of points (in terms of the program named above) issued to the customer as a result\nof this transaction. This need not be in dollar terms.\n"
+        },
+        "LoyaltyRedeemed" : {
+          "type" : "number",
+          "description" : "Total number of points redeemed to reduce the total value of the transaction."
+        }
+      }
+    },
+    "OutboundInvoice" : {
+      "type" : "object",
+      "description" : "This joins Invoices to a document header to form a complete message.",
+      "required" : [ "InvoiceHeader", "InvoiceLines" ],
+      "properties" : {
+        "InvoiceHeader" : {
+          "$ref" : "#/definitions/OutboundInvoiceHeader"
+        },
+        "InvoiceLines" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/OutboundInvoiceLine"
+          }
+        }
+      }
+    },
+    "OutboundInvoiceHeader" : {
+      "type" : "object",
+      "description" : "This is the summary detail for an invoice.",
+      "required" : [ "DocumentId", "ProcessedTimeStamp", "InvoiceDate", "InvoiceId", "InvoiceValueInc", "InvoiceGSTValue", "SupplierId" ],
+      "properties" : {
+        "DocumentId" : {
+          "type" : "string",
+          "description" : "The unique ID used by Metcash to store/track the invoice.",
+          "maxLength" : 32
+        },
+        "ProcessedTimeStamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "The date and time the invoice was processed by Metcash."
+        },
+        "InvoiceDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date on the invoice."
+        },
+        "InvoiceId" : {
+          "type" : "string",
+          "description" : "The supplier's reference / identifier on the invoice, typically the invoice number.",
+          "maxLength" : 32
+        },
+        "InvoiceValueInc" : {
+          "type" : "number",
+          "description" : "The invoice value including GST - what the retailer paid.  \nIt will match the sum of the invoice details.\n"
+        },
+        "InvoiceGSTValue" : {
+          "type" : "number",
+          "description" : "The total GST value shown on the tax invoice."
+        },
+        "SupplierId" : {
+          "type" : "string",
+          "description" : "The identifier for the supplier as mapped by Metcash.",
+          "maxLength" : 32
+        },
+        "SupplierName" : {
+          "type" : "string",
+          "description" : "The supplier's name.",
+          "maxLength" : 50
+        },
+        "SupplierABN" : {
+          "type" : "string",
+          "description" : "The ABN for the supplier.  Though not mandatory, this is highly desirable.",
+          "minLength" : 11,
+          "maxLength" : 11
+        },
+        "PurchaseOrderId" : {
+          "type" : "string",
+          "description" : "The site's purchase order number if one was issued.",
+          "maxLength" : 32
+        },
+        "HeaderDissections" : {
+          "type" : "array",
+          "description" : "An optional list of invoice charges or discounts which when summed with the invoice lines, \nbalances the invoice.\n",
+          "items" : {
+            "$ref" : "#/definitions/InvoiceDissection"
+          }
+        }
+      }
+    },
+    "OutboundInvoiceLine" : {
+      "type" : "object",
+      "description" : "This defines the line of the invoice for a product supplied.\nIt will include any discounts and is ideally expressed in terms of the lowest consumer unit supplied.\nBonus stock may appear as a separate line with the bonus quantitiy and a zero value \n(or near zero if there are charges).\n",
+      "required" : [ "InvoiceLineNumber", "ProductName", "LineUnit", "LineQty", "LineValueInc", "LineGSTValue" ],
+      "properties" : {
+        "InvoiceLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number for this line in the invoice."
+        },
+        "GTINPLU" : {
+          "type" : "string",
+          "description" : "Where a product has a GTIN it must be provided, including its GS1 checkdigit.\nIn the case the product does not have a GTIN, it may be a PLU code\nissued by Metcash or another recognised body.\nThe field is 14 characters and should be padded with leading zeros.\nNon-product charges or discounts should appear in the InvoiceHeader.\nThe GTINPLU should match the quantity used below, ideally expressed in terms of\nthe lowest consumer unit.\n",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "ProductName" : {
+          "type" : "string",
+          "description" : "The name of the product invoiced, considering the GTINPLU and invoice quantity.",
+          "maxLength" : 50
+        },
+        "ProductMSC" : {
+          "type" : "string",
+          "description" : "The Metcash Standard Categorisation code, formatted as CCCccss\nwhere CCC is Category, cc is Commodity and ss is Sub Section.\nWill  typically be omitted on non-mastered direct supplies.\n",
+          "minLength" : 7,
+          "maxLength" : 7
+        },
+        "MetcashProductCode" : {
+          "type" : "string",
+          "description" : "Where the product has been sourced via Metcash, it will be the hosted Metcash product code, \npadded with leading zeros (i.e. as hosted). Otherwise, it will be omitted.\n",
+          "minLength" : 8,
+          "maxLength" : 8
+        },
+        "SupplierProductCode" : {
+          "type" : "string",
+          "description" : "The supplier's product identifier as per their invoice.",
+          "maxLength" : 32
+        },
+        "CartonMultiple" : {
+          "type" : "number",
+          "description" : "The product multiple for the ordering carton, relating to the GTINPLU and CostUnit."
+        },
+        "CartonGTIN" : {
+          "type" : "string",
+          "description" : "The GTIN on the carton with the CartonMultiple.",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "LineUnit" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the costing.\nThis is typically 'ea' or 'ctn' unless purchasing by weight, volumme or length.\n",
+          "enum" : [ "ea", "ctn", "kg", "m", "l" ]
+        },
+        "LineQty" : {
+          "type" : "number",
+          "description" : "The number of LineUnits requested in this detail record.\nIf the product is sold by weight or volume, then may be a decimal amount.\n"
+        },
+        "LineValueInc" : {
+          "type" : "number",
+          "description" : "The extended price that the retailer pays for the product(s) in this record, \ninclusive of tax, charges and discounts.\n"
+        },
+        "LineValueEx" : {
+          "type" : "number",
+          "description" : "The GST-exclusive value for LineValueInc.  They will match if the product is GST-exclusive.\n"
+        },
+        "LineGSTValue" : {
+          "type" : "number",
+          "description" : "The GST value for this line.  If the line is GST-exclusive, it will be '0'."
+        },
+        "BaseCostValueEx" : {
+          "type" : "number",
+          "description" : "The normal price of a LineUnit, before any taxes, charges or discounts are applied."
+        },
+        "LineDissections" : {
+          "type" : "array",
+          "description" : "An optional list of charges or discounts which balance the extended Unit Price to the Line Value.\n",
+          "items" : {
+            "$ref" : "#/definitions/InvoiceDissection"
+          }
+        }
+      }
+    },
+    "InboundInvoicesDocument" : {
+      "type" : "object",
+      "description" : "This joins Invoices to a document header to form a complete message.",
+      "required" : [ "DocumentHeader", "Invoices" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "Invoices" : {
+          "$ref" : "#/definitions/InboundInvoices"
+        }
+      }
+    },
+    "InboundInvoices" : {
+      "type" : "object",
+      "description" : "Invoices identifies the site and provides a list of invoices the site has received.\nThe invoice is made up of a header and list of invoice detail lines.\n",
+      "required" : [ "InvoiceHeader", "Site" ],
+      "properties" : {
+        "Site" : {
+          "$ref" : "#/definitions/Site"
+        },
+        "InvoiceHeader" : {
+          "$ref" : "#/definitions/InboundInvoiceHeader"
+        },
+        "InvoiceLines" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/InboundInvoiceLine"
+          }
+        }
+      }
+    },
+    "InboundInvoiceHeader" : {
+      "type" : "object",
+      "description" : "This is the summary detail for an invoice.",
+      "required" : [ "InvoiceDate", "InvoiceId", "InvoiceValueInc", "InvoiceGSTValue", "SupplierId" ],
+      "properties" : {
+        "DocumentId" : {
+          "type" : "string",
+          "description" : "The unique ID used internally to store/track the invoice",
+          "maxLength" : 32
+        },
+        "ProcessedTimeStamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "The date and time the invoice was processed."
+        },
+        "InvoiceDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date on the invoice."
+        },
+        "InvoiceId" : {
+          "type" : "string",
+          "description" : "The supplier's reference / identifier on the invoice, typically the invoice number.",
+          "maxLength" : 32
+        },
+        "InvoiceValueInc" : {
+          "type" : "number",
+          "description" : "The invoice value including GST - what the retailer paid.  \nIt will match the sum of the invoice details.\n"
+        },
+        "InvoiceGSTValue" : {
+          "type" : "number",
+          "description" : "The total GST value shown on the tax invoice."
+        },
+        "SupplierId" : {
+          "type" : "string",
+          "description" : "The Site's internal identifier for the supplier.  \nIdeally, the code used in their accounting system.\n",
+          "maxLength" : 32
+        },
+        "SupplierName" : {
+          "type" : "string",
+          "description" : "The supplier's name.",
+          "maxLength" : 50
+        },
+        "SupplierABN" : {
+          "type" : "string",
+          "description" : "The ABN for the supplier.  Though not mandatory, this is highly desirable.",
+          "minLength" : 11,
+          "maxLength" : 11
+        },
+        "PurchaseOrderId" : {
+          "type" : "string",
+          "description" : "The site's purchase order number if one was issued.",
+          "maxLength" : 32
+        },
+        "FinanceId" : {
+          "type" : "string",
+          "description" : "The ID that would be attached to the invoice total if it was to be exported to a finance system.\n",
+          "maxLength" : 32
+        },
+        "HeaderDissections" : {
+          "type" : "array",
+          "description" : "An optional list of invoice charges or discounts which when summed with the invoice lines, \nbalances the invoice.\n",
+          "items" : {
+            "$ref" : "#/definitions/InvoiceDissection"
+          }
+        }
+      }
+    },
+    "InboundInvoiceLine" : {
+      "type" : "object",
+      "description" : "This defines the line of the invoice for a product supplied.\nIt will include any discounts and is ideally expressed in terms of the lowest consumer unit supplied.\nBonus stock may appear as a separate line with the bonus quantitiy and a zero value \n(or near zero if there are charges).\n",
+      "required" : [ "InvoiceLineNumber", "GTINPLU", "ProductMSC", "ProductName", "DeptId", "LineUnit", "LineQty", "LineValueInc", "LineGSTValue" ],
+      "properties" : {
+        "InvoiceLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number for this line in the invoice."
+        },
+        "GTINPLU" : {
+          "type" : "string",
+          "description" : "Where a product has a GTIN it must be provided, including its GS1 checkdigit.\nIn the case the product does not have a GTIN, where possible provide a PLU code \nissued by Metcash or another recognised body.\nLast resort is to provide an in-house assigned PLU code.\nThe field is 14 characters and should be padded with leading zeros.\nNon-product charges or discounts should appear in the InvoiceHeader.\nThe GTINPLU should match the quantity used below, ideally expressed in terms of\nthe lowest consumer unit.\n",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "ProductName" : {
+          "type" : "string",
+          "description" : "The name of the product invoiced, considering the GTINPLU and invoice quantity.",
+          "maxLength" : 50
+        },
+        "ProductMSC" : {
+          "type" : "string",
+          "description" : "The Metcash Standard Categorisation code, formatted as CCCccss\nwhere CCC is Category, cc is Commodity and ss is Sub Section.\nThis is a mandatory field.  Where a product is sourced direct, the system must either \nuse mapping to assign an MSC or provide a value captured by user-entry.\n",
+          "minLength" : 7,
+          "maxLength" : 7
+        },
+        "DeptId" : {
+          "type" : "string",
+          "description" : "The in-house department code use by the business to analyse performance below the location level.\n",
+          "maxLength" : 32
+        },
+        "MetcashProductCode" : {
+          "type" : "string",
+          "description" : "Where the product has been sourced via Metcash, provide the hosted Metcash product code, \npadded with leading zeros (i.e. as hosted). Otherwise, omit this field.\n",
+          "minLength" : 8,
+          "maxLength" : 8
+        },
+        "SupplierProductCode" : {
+          "type" : "string",
+          "description" : "The supplier's product identifier as per their invoice.",
+          "maxLength" : 32
+        },
+        "CartonMultiple" : {
+          "type" : "number",
+          "description" : "The product multiple for the ordering carton, relating to the GTINPLU and CostUnit."
+        },
+        "CartonGTIN" : {
+          "type" : "string",
+          "description" : "The GTIN on the carton with the CartonMultiple.",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "LineUnit" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the costing.\nThis is typically 'ea' or 'ctn' unless purchasing by weight, volumme or length.\n",
+          "enum" : [ "ea", "ctn", "kg", "m", "l" ]
+        },
+        "LineQty" : {
+          "type" : "number",
+          "description" : "The number of LineUnits requested in this detail record.\nIf the product is sold by weight or volume, then may be a decimal amount.\n"
+        },
+        "LineValueInc" : {
+          "type" : "number",
+          "description" : "The extended price that the retailer pays for the product(s) in this record, \ninclusive of tax, charges and discounts.\n"
+        },
+        "LineValueEx" : {
+          "type" : "number",
+          "description" : "The GST-exclusive value for LineValueInc.  They will match if the product is GST-exclusive.\n"
+        },
+        "LineGSTValue" : {
+          "type" : "number",
+          "description" : "The GST value for this line.  If the line is GST-exclusive, specify '0'."
+        },
+        "BaseCostValueEx" : {
+          "type" : "number",
+          "description" : "The normal price of a LineUnit, before any taxes, charges or  discounts are applied."
+        },
+        "LineDissections" : {
+          "type" : "array",
+          "description" : "An optional list of charges or discounts which balance the extended Unit Price to the Line Value.\n",
+          "items" : {
+            "$ref" : "#/definitions/InvoiceDissection"
+          }
+        },
+        "FinanceId" : {
+          "type" : "string",
+          "description" : "The ID that would be attached to the detail line if it was to be exported to a finance system.\n",
+          "maxLength" : 32
+        }
+      }
+    },
+    "InvoiceDissection" : {
+      "type" : "object",
+      "description" : "The detail of a charge or discount that relate to an invoice header or invoice line.  \nTypically a fee will be positive values and a discount will be negative valued.\nShow the sign on both value and GST.\n",
+      "required" : [ "DissectionName", "DissectionValueInc", "DissectionGSTValue" ],
+      "properties" : {
+        "DissectionName" : {
+          "type" : "string",
+          "description" : "The description of the charge or discount.",
+          "maxLength" : 50
+        },
+        "DissectionValueInc" : {
+          "type" : "number",
+          "description" : "The value of the charge or discount including GST."
+        },
+        "DissectionGSTValue" : {
+          "type" : "number",
+          "description" : "The GST value of the charge or discount."
+        },
+        "FinanceId" : {
+          "type" : "string",
+          "description" : "The ID that would be attached to the charge or discount \nif it is to be exported to a finance system.\n",
+          "maxLength" : 32
+        }
+      }
+    },
+    "AdjustmentsDocument" : {
+      "type" : "object",
+      "description" : "This joins Adjustments to a document header to form a complete message.",
+      "required" : [ "Adjustments", "DocumentHeader" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "Adjustments" : {
+          "$ref" : "#/definitions/Adjustments"
+        }
+      }
+    },
+    "Adjustments" : {
+      "type" : "object",
+      "description" : "Adjustments identifies the site and provides a list of adjustments the site has performed.\nThe adjustment is made up of a list of adjustment details (products).\n",
+      "required" : [ "AdjustmentDetails", "Site" ],
+      "properties" : {
+        "Site" : {
+          "$ref" : "#/definitions/Site"
+        },
+        "AdjustmentDetails" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/AdjustmentDetail"
+          }
+        }
+      }
+    },
+    "AdjustmentDetail" : {
+      "type" : "object",
+      "description" : "This defines the adjustment on a product.\nNote the sign on quantities and costs reflects the impact on inventory (negative if reducing).\n",
+      "required" : [ "AdjustmentTimestamp", "AdjustmentLineNumber", "GTINPLU", "ProductName", "ProductMSC", "DeptId", "AdjustmentUnit", "AdjustmentQty", "CostValueInc", "CostGSTValue" ],
+      "properties" : {
+        "AdjustmentTimestamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "The date and time of the adjustment."
+        },
+        "AdjustmentLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number for this line in the adjustment."
+        },
+        "GTINPLU" : {
+          "type" : "string",
+          "description" : "Where a product has a GTIN it must be provided, including its GS1 checkdigit.\nIn the case the product does not have a GTIN, where possible provide a PLU code \nissued by Metcash or another recognised body.\nLast resort is to provide an in-house assigned PLU code.\nThe field is 14 characters and should be padded with leading zeros.\nThe GTINPLU should match the quantity used below, ideally expressed in terms of \nthe lowest consumer unit.\n",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "ProductName" : {
+          "type" : "string",
+          "description" : "The name of the product adjusted, considering the GTINPLU and adjustment quantity.",
+          "maxLength" : 50
+        },
+        "ProductMSC" : {
+          "type" : "string",
+          "description" : "The Metcash Standard Categorisation code, formatted as CCCccss\nwhere CCC is Category, cc is Commodity and ss is Sub Section.\nThis is a mandatory field.  Where a product is sourced direct, the system must either \nuse mapping to assign an MSC or provide a value captured by user-entry.\n",
+          "minLength" : 7,
+          "maxLength" : 7
+        },
+        "DeptId" : {
+          "type" : "string",
+          "description" : "The in-house department code use by the business to analyse performance below the location level.\n",
+          "maxLength" : 32
+        },
+        "MetcashProductCode" : {
+          "type" : "string",
+          "description" : "Where the product has been sourced via Metcash, provide the hosted Metcash product code, \npadded with leading zeros (i.e. as hosted). Otherwise, omit this field.\n",
+          "minLength" : 8,
+          "maxLength" : 8
+        },
+        "AdjustmentUnit" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the AdjustmentQty.",
+          "enum" : [ "ea", "kg", "m", "l", "pcs" ]
+        },
+        "AdjustmentQty" : {
+          "type" : "number",
+          "description" : "The number of products adjusted (as per the GTINPLU and ProductName) in this record.\nIf the product is sold by weight or volume, then this is a decimal amount \nreflecting the impact on stock.\n"
+        },
+        "NewQty" : {
+          "type" : "number",
+          "description" : "If the stock was counted in full, provide this quantity to assert the new stock on hand.\n"
+        },
+        "CostValueInc" : {
+          "type" : "number",
+          "description" : "The extended cost for this product, inclusive of GST, \nfor the AdjustmentQty and AdjustmentUnit advised above.\n"
+        },
+        "CostValueEx" : {
+          "type" : "number",
+          "description" : "The GST-exclusive value for CostValueInc.  They will match if the product is GST-exclusive.\n"
+        },
+        "CostGSTValue" : {
+          "type" : "number",
+          "description" : "The GST value for this adjustment.  If the adjustment is GST-exclusive, specify '0'."
+        },
+        "FinanceId" : {
+          "type" : "string",
+          "description" : "The ID that would be attached to the adjustment if it was to be exported to a finance system.",
+          "maxLength" : 32
+        },
+        "Reason" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the adjustment.  Most dumps will be Other.",
+          "enum" : [ "ManualReceipt", "TransferIn", "BonusStock", "InstoreUse", "Stocktake", "Theft", "ReturnedToSupplier", "TransferOut", "Recall", "Other" ]
+        }
+      }
+    },
+    "ProductCostingDocument" : {
+      "description" : "This joins ProductCosting to a document header to form a complete message.",
+      "type" : "object",
+      "required" : [ "ProductCosting", "DocumentHeader" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "ProductCosting" : {
+          "$ref" : "#/definitions/ProductCosting"
+        }
+      }
+    },
+    "ProductCosting" : {
+      "type" : "object",
+      "description" : "ProductCosting identifies the site and provides a list of product costings the site has received.\nThe product costing is made up of a list of product costing details (products).\n",
+      "required" : [ "ProductCostingDetails", "Site" ],
+      "properties" : {
+        "Site" : {
+          "$ref" : "#/definitions/Site"
+        },
+        "ProductCostingDetails" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/ProductCostingDetail"
+          }
+        }
+      }
+    },
+    "ProductCostingDetail" : {
+      "type" : "object",
+      "description" : "This defines the product costing on a product.  \nCosting is expressed in terms of a cost unit (e.g. 'ea' or 'ctn') and in the case of 'ctn', \nthis will be a multiple of the consumer GTINPLU.\nFor example, a carton of Coca Cola 1.25L bottles can show the GTIN for the bottle, \na costing unit of 'ea' and a product multiple of 12 (bottles per carton).  \nIn this case the cost will be for the bottle and a carton cost can be derived.\n",
+      "required" : [ "GTINPLU", "ProductName", "CartonMultiple", "CostUnit", "CostValueInc", "CostGSTValue" ],
+      "properties" : {
+        "GTINPLU" : {
+          "type" : "string",
+          "description" : "Where a product has a consumer (each) GTIN it must be provided, including its GS1 checkdigit.\nIn the case the product does not have a GTIN, where possible provide a PLU code \nissued by Metcash or another recognised body.\nLast resort is to provide an in-house assigned PLU code.\n",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "ProductName" : {
+          "type" : "string",
+          "description" : "The name of the product, considering the GTINPLU and product costing quantity.",
+          "maxLength" : 50
+        },
+        "MetcashProductCode" : {
+          "type" : "string",
+          "description" : "Where the product has been sourced via Metcash, provide the hosted Metcash product code, \npadded with leading zeros (i.e. as hosted). Otherwise, omit this field.\n",
+          "minLength" : 8,
+          "maxLength" : 8
+        },
+        "SupplierId" : {
+          "type" : "string",
+          "description" : "The Site's internal identifier for the supplier.  \nIdeally, the code used in their accounting system.\n",
+          "maxLength" : 32
+        },
+        "SupplierName" : {
+          "type" : "string",
+          "description" : "The supplier's name.",
+          "maxLength" : 50
+        },
+        "SupplierProductCode" : {
+          "type" : "string",
+          "description" : "The supplier's product identifier as per their invoice.",
+          "maxLength" : 32
+        },
+        "CartonMultiple" : {
+          "type" : "number",
+          "description" : "The product multiple for the ordering carton, relating to the GTINPLU and CostUnit."
+        },
+        "CartonGTIN" : {
+          "type" : "string",
+          "description" : "The GTIN on the carton with the CartonMultiple.",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "CostUnit" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the costing.\nThis is typically 'ea' or 'ctn' unless purchasing by weight, volumme or length.\n",
+          "enum" : [ "ea", "ctn", "kg", "m", "l" ]
+        },
+        "CostValueInc" : {
+          "type" : "number",
+          "description" : "The current cost for this product, inclusive of GST, for the CostUnit and CartonMultiple above.\n"
+        },
+        "CostValueEx" : {
+          "type" : "number",
+          "description" : "The GST-exclusive value for CostValueInc.  They will match if the product is GST-exclusive.\n"
+        },
+        "CostGSTValue" : {
+          "type" : "number",
+          "description" : "The GST value for this product costing.  If the product is GST-exclusive, specify '0'."
+        },
+        "CostStartDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date this cost became effective."
+        },
+        "CostEndDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date this cost ends, if known."
+        },
+        "BaseCostValueEx" : {
+          "type" : "number",
+          "description" : "The normal price of a CostUnit, before any taxes, charges or  discounts are applied."
+        }
+      }
+    },
+    "OrdersDocument" : {
+      "type" : "object",
+      "description" : "This joins Orders to a document header to form a complete message.",
+      "required" : [ "DocumentHeader", "Orders" ],
+      "properties" : {
+        "DocumentHeader" : {
+          "$ref" : "#/definitions/DocumentHeader"
+        },
+        "Orders" : {
+          "$ref" : "#/definitions/Orders"
+        }
+      }
+    },
+    "Orders" : {
+      "type" : "object",
+      "description" : "Orders identifies the site and provides a list of orders the site has generated.\nThe order is made up of a header and list of order detail lines.\n",
+      "required" : [ "OrderHeader", "Site" ],
+      "properties" : {
+        "Site" : {
+          "$ref" : "#/definitions/Site"
+        },
+        "OrderHeader" : {
+          "$ref" : "#/definitions/OrderHeader"
+        },
+        "OrderLines" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/OrderLine"
+          }
+        }
+      }
+    },
+    "OrderHeader" : {
+      "type" : "object",
+      "description" : "This is the summary detail for an order.",
+      "required" : [ "OrderDate", "OrderId", "SupplierId" ],
+      "properties" : {
+        "OrderDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date the order was placed with the supplier."
+        },
+        "OrderId" : {
+          "type" : "string",
+          "description" : "The customer's reference / identifier on the order, typically the order number.",
+          "maxLength" : 32
+        },
+        "OrderSummary" : {
+          "type" : "string",
+          "description" : "A short description of the order (see also 'Notes').",
+          "maxLength" : 50
+        },
+        "SupplierId" : {
+          "type" : "string",
+          "description" : "The Site's internal identifier for the supplier.  \nIdeally, the code used in their accounting system.\n",
+          "maxLength" : 32
+        },
+        "SupplierName" : {
+          "type" : "string",
+          "description" : "The supplier's name.",
+          "maxLength" : 50
+        },
+        "SupplierABN" : {
+          "type" : "string",
+          "description" : "The ABN for the supplier.  Though not mandatory, this is highly desirable.",
+          "minLength" : 11,
+          "maxLength" : 11
+        },
+        "Notes" : {
+          "type" : "string",
+          "description" : "Comments made about  the order."
+        }
+      }
+    },
+    "OrderLine" : {
+      "type" : "object",
+      "description" : "This defines the line of the order for a product ordered.",
+      "required" : [ "OrderLineNumber", "GTINPLU", "ProductName", "LineUnit", "LineQty" ],
+      "properties" : {
+        "OrderLineNumber" : {
+          "type" : "integer",
+          "description" : "The internal sequence number for this line in the order."
+        },
+        "GTINPLU" : {
+          "type" : "string",
+          "description" : "Where a product has a consumer (each) GTIN it must be provided, including its GS1 checkdigit.\nIn the case the product does not have a GTIN, where possible provide a PLU code \nissued by Metcash or another recognised body.\nLast resort is to provide an in-house assigned PLU code.\nThe field is 14 characters and should be padded with leading zeros.\nNon-product charges or discounts should appear in the OrderHeader.\n",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "ProductName" : {
+          "type" : "string",
+          "description" : "The name of the product ordered, considering the GTINPLU and order quantity.",
+          "maxLength" : 50
+        },
+        "MetcashProductCode" : {
+          "type" : "string",
+          "description" : "Where the product has been sourced via Metcash, provide the hosted Metcash product code, \npadded with leading zeros (i.e. as hosted). Otherwise, omit this field.\n",
+          "minLength" : 8,
+          "maxLength" : 8
+        },
+        "SupplierProductCode" : {
+          "type" : "string",
+          "description" : "The supplier's product identifier as per their invoice.",
+          "maxLength" : 32
+        },
+        "CartonMultiple" : {
+          "type" : "number",
+          "description" : "The product multiple for the ordering carton, relating to the GTINPLU and CostUnit."
+        },
+        "CartonGTIN" : {
+          "type" : "string",
+          "description" : "The GTIN on the carton with the CartonMultiple.",
+          "minLength" : 14,
+          "maxLength" : 14
+        },
+        "LineUnit" : {
+          "type" : "string",
+          "description" : "An enumerated value that describes the costing.\nThis is typically 'ea' or 'ctn' unless purchasing by weight, volumme or length.\n",
+          "enum" : [ "ea", "ctn", "kg", "m", "l" ]
+        },
+        "LineQty" : {
+          "type" : "number",
+          "description" : "The number of LineUnits requested in this detail record.\nIf the product is sold by weight or volume, then may be a decimal amount.\n"
+        },
+        "LineValueInc" : {
+          "type" : "number",
+          "description" : "The extended price that the retailer expects to pay for the product(s) in this record, \ninclusive of tax, charges and discounts.\n"
+        },
+        "LineValueEx" : {
+          "type" : "number",
+          "description" : "The GST-exclusive value for LineValueInc.  They will match if the product is GST-exclusive.\n"
+        },
+        "LineGSTValue" : {
+          "type" : "number",
+          "description" : "The GST value for this line.  If the line is GST-exclusive, specify '0'."
+        },
+        "BaseCostValueEx" : {
+          "type" : "number",
+          "description" : "The normal price of a CostUnit, before any taxes, charges or  discounts are applied."
+        }
+      }
+    },
+    "Site" : {
+      "type" : "object",
+      "description" : "The Site construct groups together fields that describe a store (retail) or venue (hospitality).\nThere can optionally be multiple locations in the site (e.g. restaurants/bars in a venue).\n",
+      "required" : [ "ABN", "POSProductName", "POSProductVersion", "POSVendorName", "SiteId", "SiteName" ],
+      "properties" : {
+        "SiteId" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "SiteId is a number assigned by Metcash that identifies the primary location for the business.\n"
+        },
+        "SiteName" : {
+          "type" : "string",
+          "description" : "The name of the site as it would appear on the tax invoice.",
+          "maxLength" : 50
+        },
+        "ABN" : {
+          "type" : "string",
+          "description" : "The ABN identifies the business.  It is present on the tax-invoice produced for the transactions.\n",
+          "minLength" : 11,
+          "maxLength" : 11
+        },
+        "POSVendorName" : {
+          "type" : "string",
+          "description" : "This is the name of the company that develops the POS software creating this data set.",
+          "maxLength" : 50
+        },
+        "POSProductName" : {
+          "type" : "string",
+          "description" : "Given that POS Vendors release different products, Metcash requests that\nthe product name be provided to help identify instore capabilities.\n",
+          "maxLength" : 50
+        },
+        "POSProductVersion" : {
+          "type" : "string",
+          "description" : "The product version is requested so that Metcash knows what version of the POS created this extract\nand also to assist in identifying the current capabilities of the instore version.\n",
+          "maxLength" : 20
+        }
+      }
+    },
+    "DocumentHeader" : {
+      "type" : "object",
+      "description" : "The Document Header is shared by all MetDocument transactions.\nIt provides a mechanism whereby transactions can be tracked end-to-end for support purposes.\n",
+      "required" : [ "Transaction" ],
+      "properties" : {
+        "Transaction" : {
+          "$ref" : "#/definitions/Transaction"
+        }
+      }
+    },
+    "Transaction" : {
+      "type" : "object",
+      "description" : "Metcash will record the transaction details below against each API call containing this structure.\nThe purpose is to provide a mechanism where we can troubleshoot any issues with data provided\nby our external partners.\n",
+      "required" : [ "TransactionID", "TransactionIDType", "TransactionTimestamp" ],
+      "properties" : {
+        "TransactionID" : {
+          "type" : "string",
+          "description" : "TransactionId is a unique identifier supplied by the client to identify a transaction."
+        },
+        "TransactionIDType" : {
+          "type" : "string",
+          "description" : "This field is used to uniquely describe the client providing the TransactionID.\nFor retail stores it is recommended this is the SiteID as it would be in scan data.\nThe string should not be METCASHID which is reserved for internal use.\n"
+        },
+        "TransactionTimestamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "The date and time the transaction was initiated by the client."
+        }
+      }
+    },
+    "File" : {
+      "type" : "object",
+      "description" : "This type holds information about the file and the content itself.\nNote - there is a known-issue where the file inside a zip must have a lower-case file extension.\n",
+      "required" : [ "FileContent", "FileFormat", "FileSizeByte", "ZippedFlag" ],
+      "properties" : {
+        "FileFormat" : {
+          "type" : "string",
+          "description" : "This indicates the file format such as JSON, CSV, XML etc.",
+          "enum" : [ "JSON", "XML", "CSV" ]
+        },
+        "ZippedFlag" : {
+          "type" : "boolean",
+          "description" : "Indicate if the file is zipped or not."
+        },
+        "FileContent" : {
+          "type" : "string",
+          "format" : "byte",
+          "description" : "This is the actual file content.",
+          "pattern" : "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "FileSizeByte" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Used to help confirm the file content is complete."
+        }
+      }
+    }
+  }
+}
